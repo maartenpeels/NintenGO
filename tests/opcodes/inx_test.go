@@ -8,7 +8,7 @@ import (
 
 func TestINX(t *testing.T) {
 	program := []byte{0xe8, 0xe8}
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 
 	c.Run()
 
@@ -19,7 +19,7 @@ func TestINX(t *testing.T) {
 
 func TestINXOverflow(t *testing.T) {
 	program := []byte{0xe8, 0xe8}
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 
 	c.RegisterX = 0xff
 	c.Run()

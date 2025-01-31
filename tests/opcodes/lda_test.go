@@ -8,7 +8,7 @@ import (
 
 func TestLDA(t *testing.T) {
 	program := []byte{0xa9, 0x05, 0x00}
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 	c.Run()
 
 	if c.RegisterA != 0x05 {
@@ -26,7 +26,7 @@ func TestLDA(t *testing.T) {
 
 func TestLDAZeroPage(t *testing.T) {
 	program := []byte{0xa5, 0x10, 0x00}
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 
 	// Prepare memory
 	c.WriteMemory(0x10, 0x55)
@@ -40,7 +40,7 @@ func TestLDAZeroPage(t *testing.T) {
 
 func TestLDAZero(t *testing.T) {
 	program := []byte{0xa9, 0x00, 0x00}
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 	c.Run()
 
 	if c.RegisterA != 0x00 {
@@ -58,7 +58,7 @@ func TestLDAZero(t *testing.T) {
 
 func TestLDAZeroNegative(t *testing.T) {
 	program := []byte{0xa9, 0x80, 0x00}
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 	c.Run()
 
 	if c.RegisterA != 0x80 {

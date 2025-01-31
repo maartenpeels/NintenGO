@@ -11,7 +11,7 @@ func TestAND(t *testing.T) {
 		0x29, 0x0f, // AND #$0f
 	}
 
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 	c.RegisterA = 0xFF
 
 	c.Step()
@@ -28,7 +28,7 @@ func TestANDIndirectX(t *testing.T) {
 		0x0F, // Value at address
 	}
 
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 	c.RegisterA = 0xFF
 	c.RegisterX = 0x01
 

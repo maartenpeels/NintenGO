@@ -8,7 +8,7 @@ import (
 
 func TestBRK(t *testing.T) {
 	program := []byte{0x00}
-	c := cpu.New(program)
+	c := cpu.New(0x800, program)
 
 	c.Run()
 

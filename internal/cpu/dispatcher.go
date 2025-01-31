@@ -15,7 +15,12 @@ func RegisterOpcode(opcode uint8, handler OpcodeHandler, addressingMode uint, le
 	opcodeMap[opcode] = Opcode{Name: name, AddressingMode: addressingMode, Length: length, Handler: handler}
 }
 
-func Dispatch(opcode uint8) (Opcode, bool) {
+func Dispatch(opcode uint8) Opcode {
 	_opcode, exists := opcodeMap[opcode]
-	return _opcode, exists
+
+	if !exists {
+		return opcodeMap[0xEA] // NOP
+	}
+
+	return _opcode
 }

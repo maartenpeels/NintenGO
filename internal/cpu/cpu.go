@@ -41,13 +41,13 @@ type CPU struct {
 	Memory [0xFFFF]uint8
 }
 
-type CPUError struct {
+type Error struct {
 	PC      uint16
 	OpCode  uint8
 	Message string
 }
 
-func (e *CPUError) Error() string {
+func (e *Error) Error() string {
 	return fmt.Sprintf("CPU Error at PC:%04X (OpCode:%02X): %s", e.PC, e.OpCode, e.Message)
 }
 
@@ -55,6 +55,7 @@ func New(start uint16, program []byte) *CPU {
 	c := &CPU{
 		RegisterA: 0,
 		RegisterX: 0,
+		RegisterY: 0,
 
 		Status: 0,
 
@@ -64,117 +65,118 @@ func New(start uint16, program []byte) *CPU {
 		Memory: [0xFFFF]uint8{},
 	}
 	c.loadProgram(start, program)
-	c.reset()
+	c.Reset()
 	return c
 }
 
-func (c *CPU) Step() error {
+func (c *CPU) Reset() {
+	c.RegisterA = 0
+	c.RegisterX = 0
+	c.RegisterY = 0
+
+	c.Status = 0
+
+	c.StackPointer = StackReset
+
+	// Load the reset vector from 0xFFFC
+	c.ProgramCounter = c.ReadMemoryU16(0xFFFC)
+}
+
+func (c *CPU) Step() bool {
 	if c.IsFlagSet(BreakCommand) {
-		return &CPUError{
-			PC:      c.ProgramCounter,
-			OpCode:  0,
-			Message: "Break flag is set",
-		}
+		common.Log.Debug("Break command flag set, halting execution")
+		return false
 	}
 
-	opCode := c.ReadMemory(c.ProgramCounter)
+	opCodeByte := c.ReadMemory(c.ProgramCounter)
 	programCounterStart := c.ProgramCounter
-	c.ProgramCounter++ // Increment by 1 to point to first operand byte
+	c.ProgramCounter += 1
 	programCounterState := c.ProgramCounter
 
-	if opcode, exists := Dispatch(opCode); exists {
-		// Store operand address before executing
-		var address uint16
-		var value uint8
+	opcode := Dispatch(opCodeByte)
 
-		if opcode.AddressingMode != AddressingModeImplicit &&
-			opcode.AddressingMode != AddressingModeAccumulator &&
-			opcode.AddressingMode != AddressingModeRelative {
-			address = c.GetOpAddress(opcode.AddressingMode)
-			value = c.ReadMemory(address)
-		} else if opcode.AddressingMode == AddressingModeRelative {
-			// Branch instructions
-			jump := int8(c.ReadMemory(c.ProgramCounter))
-			address = c.ProgramCounter + 1 + uint16(jump)
-		}
+	// Store operand address before executing
+	var address uint16
+	var value uint8
 
-		// Format status flags for better readability
-		statusFlags := fmt.Sprintf("%c%c%c%c%c%c%c",
-			map[bool]rune{true: 'N', false: '-'}[c.IsFlagSet(NegativeFlag)],
-			map[bool]rune{true: 'V', false: '-'}[c.IsFlagSet(OverflowFlag)],
-			map[bool]rune{true: 'B', false: '-'}[c.IsFlagSet(BreakCommand)],
-			map[bool]rune{true: 'D', false: '-'}[c.IsFlagSet(DecimalMode)],
-			map[bool]rune{true: 'I', false: '-'}[c.IsFlagSet(InterruptDisable)],
-			map[bool]rune{true: 'Z', false: '-'}[c.IsFlagSet(ZeroFlag)],
-			map[bool]rune{true: 'C', false: '-'}[c.IsFlagSet(CarryFlag)])
+	if opcode.AddressingMode != AddressingModeImplicit &&
+		opcode.AddressingMode != AddressingModeAccumulator &&
+		opcode.AddressingMode != AddressingModeRelative {
+		address = c.GetOpAddress(opcode.AddressingMode)
+		value = c.ReadMemory(address)
+	} else if opcode.AddressingMode == AddressingModeRelative {
+		// Branch instructions
+		jump := int8(c.ReadMemory(c.ProgramCounter))
+		address = c.ProgramCounter + 1 + uint16(jump)
+	}
 
-		// Build the log message based on addressing mode
-		switch opcode.AddressingMode {
-		case AddressingModeImplicit, AddressingModeAccumulator:
-			common.Log.Debugf("PC:%04X | OP:%02X %-3s | A:%02X X:%02X Y:%02X | SP:%02X | %s",
-				programCounterStart,
-				opCode,
-				opcode.Name,
-				c.RegisterA,
-				c.RegisterX,
-				c.RegisterY,
-				c.StackPointer,
-				statusFlags)
-		default:
-			addrMode := getAddressingModeString(opcode.AddressingMode, address)
-			common.Log.Debugf("PC:%04X | OP:%02X %-3s | %s | VAL:%02X | A:%02X X:%02X Y:%02X | SP:%02X | %s",
-				programCounterStart,
-				opCode,
-				opcode.Name,
-				addrMode,
-				value,
-				c.RegisterA,
-				c.RegisterX,
-				c.RegisterY,
-				c.StackPointer,
-				statusFlags)
-		}
+	// Format status flags for better readability
+	statusFlags := fmt.Sprintf("%c%c%c%c%c%c%c",
+		map[bool]rune{true: 'N', false: '-'}[c.IsFlagSet(NegativeFlag)],
+		map[bool]rune{true: 'V', false: '-'}[c.IsFlagSet(OverflowFlag)],
+		map[bool]rune{true: 'B', false: '-'}[c.IsFlagSet(BreakCommand)],
+		map[bool]rune{true: 'D', false: '-'}[c.IsFlagSet(DecimalMode)],
+		map[bool]rune{true: 'I', false: '-'}[c.IsFlagSet(InterruptDisable)],
+		map[bool]rune{true: 'Z', false: '-'}[c.IsFlagSet(ZeroFlag)],
+		map[bool]rune{true: 'C', false: '-'}[c.IsFlagSet(CarryFlag)])
 
-		// Execute the instruction
-		opcode.Handler(c, opcode.AddressingMode)
+	// Build the log message based on addressing mode
+	switch opcode.AddressingMode {
+	case AddressingModeImplicit, AddressingModeAccumulator:
+		common.Log.Debugf("PC:%04X | OP:%02X %-3s | A:%02X X:%02X Y:%02X | SP:%02X | %s",
+			programCounterStart,
+			opCodeByte,
+			opcode.Name,
+			c.RegisterA,
+			c.RegisterX,
+			c.RegisterY,
+			c.StackPointer,
+			statusFlags)
+	default:
+		addrMode := getAddressingModeString(opcode.AddressingMode, address)
+		common.Log.Debugf("PC:%04X | OP:%02X %-3s | %s | VAL:%02X | A:%02X X:%02X Y:%02X | SP:%02X | %s",
+			programCounterStart,
+			opCodeByte,
+			opcode.Name,
+			addrMode,
+			value,
+			c.RegisterA,
+			c.RegisterX,
+			c.RegisterY,
+			c.StackPointer,
+			statusFlags)
+	}
 
-		// Only increment PC after execution if it wasn't modified by the instruction
-		if c.ProgramCounter == programCounterState {
-			c.ProgramCounter += uint16(opcode.Length) - 1
-			common.Log.Debugf("PC:%04X | Next instruction", c.ProgramCounter)
+	// Execute the instruction
+	opcode.Handler(c, opcode.AddressingMode)
 
-		} else {
-			common.Log.Debugf("PC:%04X | Jumped to %04X", programCounterStart, c.ProgramCounter)
-		}
+	// Only increment PC after execution if it wasn't modified by the instruction
+	if c.ProgramCounter == programCounterState {
+		c.ProgramCounter += uint16(opcode.Length - 1)
+		common.Log.Debugf("PC:%04X | Next instruction", c.ProgramCounter)
 
-		return nil
 	} else {
-		// Dump memory around the invalid opcode
-		common.Log.Warnf("Unknown opcode: %02X at PC:%04X", opCode, programCounterStart)
-		common.Log.Warnf("Memory dump around PC:")
-		for i := -8; i <= 8; i++ {
-			addr := programCounterStart + uint16(i)
-			if addr < 0xFFFF {
-				common.Log.Warnf("%04X: %02X", addr, c.ReadMemory(addr))
-			}
-		}
-		return &CPUError{
-			PC:      programCounterStart,
-			OpCode:  opCode,
-			Message: fmt.Sprintf("Unknown opcode %02X", opCode),
+		common.Log.Debugf("PC:%04X | Jumped to %04X", programCounterStart, c.ProgramCounter)
+	}
+
+	return true
+}
+
+func (c *CPU) Run() {
+	for {
+		if !c.Step() {
+			break
 		}
 	}
 }
 
-func (c *CPU) Run() error {
+func (c *CPU) RunWithCallback(callback func(*CPU)) {
 	for {
-		if err := c.Step(); err != nil {
-			if _, ok := err.(*CPUError); ok {
-				common.Log.Debug("CPU execution stopped: ", err)
-				return err
-			}
-			return fmt.Errorf("unexpected error: %w", err)
+		if !c.Step() {
+			break
 		}
+
+		callback(c)
 	}
 }
 
@@ -229,14 +231,16 @@ func (c *CPU) WriteMemory(address uint16, value uint8) {
 }
 
 func (c *CPU) ReadMemoryU16(address uint16) uint16 {
-	lo := uint16(c.Memory[address])
-	hi := uint16(c.Memory[address+1])
+	lo := uint16(c.ReadMemory(address))
+	hi := uint16(c.ReadMemory(address + 1))
 	return (hi << 8) | lo
 }
 
 func (c *CPU) WriteMemoryU16(address uint16, value uint16) {
-	c.Memory[address] = uint8(value & 0xFF)
-	c.Memory[address+1] = uint8(value >> 8)
+	lo := uint8(value & 0xFF)
+	high := uint8(value >> 8)
+	c.WriteMemory(address, lo)
+	c.WriteMemory(address+1, high)
 }
 
 func (c *CPU) PushStack(value uint8) {
@@ -309,17 +313,6 @@ func (c *CPU) loadProgram(start uint16, program []byte) {
 	}
 
 	c.WriteMemoryU16(0xFFFC, start)
-}
-
-func (c *CPU) reset() {
-	c.RegisterA = 0
-	c.RegisterX = 0
-	c.RegisterY = 0
-	c.Status = 0
-	c.StackPointer = 0xfd
-
-	// Load the reset vector from 0xFFFC
-	c.ProgramCounter = c.ReadMemoryU16(0xFFFC)
 }
 
 // Helper function to get human-readable addressing mode string
