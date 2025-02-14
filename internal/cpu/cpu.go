@@ -1,6 +1,7 @@
 package cpu
 
 import (
+	"NintenGo/internal/bus"
 	"NintenGo/internal/common"
 	"fmt"
 	"strconv"
@@ -33,12 +34,12 @@ type CPU struct {
 	RegisterX uint8
 	RegisterY uint8
 
-	Status uint8
+	Status *StatusRegister
 
 	ProgramCounter uint16
 	StackPointer   uint8
 
-	Bus *BUS
+	Bus *bus.BUS
 }
 
 type Error struct {
@@ -51,13 +52,13 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("CPU Error at PC:%04X (OpCode:%02X): %s", e.PC, e.OpCode, e.Message)
 }
 
-func New(bus *BUS) *CPU {
+func New(bus *bus.BUS) *CPU {
 	return &CPU{
 		RegisterA: 0,
 		RegisterX: 0,
 		RegisterY: 0,
 
-		Status: 0,
+		Status: NewStatusRegister(),
 
 		ProgramCounter: 0,
 		StackPointer:   StackReset,
@@ -71,8 +72,7 @@ func (c *CPU) Reset() {
 	c.RegisterX = 0
 	c.RegisterY = 0
 
-	c.Status = 0
-
+	c.Status = NewStatusRegister()
 	c.StackPointer = StackReset
 
 	// Load the reset vector from 0xFFFC
@@ -80,7 +80,7 @@ func (c *CPU) Reset() {
 }
 
 func (c *CPU) Step() bool {
-	if c.IsFlagSet(BreakCommand) {
+	if c.Status.Contains(BreakCommand) {
 		common.Log.Debug("Break command flag set, halting execution")
 		return false
 	}
@@ -91,6 +91,7 @@ func (c *CPU) Step() bool {
 	programCounterState := c.ProgramCounter
 
 	opcode := Dispatch(opCodeByte)
+	c.Bus.Tick(opcode.Cycles)
 
 	// Build instruction bytes string
 	var instructionBytes []string
@@ -279,24 +280,25 @@ func (c *CPU) PopStackU16() uint16 {
 }
 
 func (c *CPU) SetZeroAndNegativeFlags(value uint8) {
-	c.SetFlag(ZeroFlag, value == 0)
-	c.SetFlag(NegativeFlag, value&0x80 != 0)
+
+	c.Status.SetBool(ZeroFlag, value == 0)
+	c.Status.SetBool(NegativeFlag, value&0x80 != 0)
 }
 
 // AddToRegisterA adds a value to the accumulator and updates the flags accordingly.
 func (c *CPU) AddToRegisterA(value uint8) {
 	sum := uint16(c.RegisterA) + uint16(value)
-	if c.IsFlagSet(CarryFlag) {
+	if c.Status.Contains(CarryFlag) {
 		sum++
 	}
 
-	c.SetFlag(CarryFlag, sum > 0xFF)
+	c.Status.SetBool(CarryFlag, sum > 0xFF)
 
 	var result = uint8(sum)
 	if (value^result)&(result^c.RegisterA)&0x80 != 0 {
-		c.SetFlag(OverflowFlag, true)
+		c.Status.Set(OverflowFlag)
 	} else {
-		c.SetFlag(OverflowFlag, false)
+		c.Status.Clear(OverflowFlag)
 	}
 
 	c.RegisterA = uint8(sum)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"NintenGo/internal/bus"
 	"NintenGo/internal/cpu"
 	_ "NintenGo/internal/opcodes" // Ugly, but cannot call from cpu package
 	"NintenGo/internal/rom"
@@ -118,7 +119,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	b := cpu.NewBus(r)
+	b := bus.NewBus(r)
 	Cpu = cpu.New(b)
 	Cpu.Reset()
 	Cpu.ProgramCounter = 0xC000
@@ -177,13 +178,13 @@ func renderEmulatorWindow() {
 		C bool
 	}
 	var state = FlagState{
-		Cpu.IsFlagSet(cpu.NegativeFlag),
-		Cpu.IsFlagSet(cpu.OverflowFlag),
-		Cpu.IsFlagSet(cpu.BreakCommand),
-		Cpu.IsFlagSet(cpu.DecimalMode),
-		Cpu.IsFlagSet(cpu.InterruptDisable),
-		Cpu.IsFlagSet(cpu.ZeroFlag),
-		Cpu.IsFlagSet(cpu.CarryFlag),
+		Cpu.Status.Contains(cpu.NegativeFlag),
+		Cpu.Status.Contains(cpu.OverflowFlag),
+		Cpu.Status.Contains(cpu.BreakCommand),
+		Cpu.Status.Contains(cpu.DecimalMode),
+		Cpu.Status.Contains(cpu.InterruptDisable),
+		Cpu.Status.Contains(cpu.ZeroFlag),
+		Cpu.Status.Contains(cpu.CarryFlag),
 	}
 
 	var splitPos float32 = 528
@@ -275,13 +276,13 @@ func renderEmulatorWindow() {
 				giu.Label("RAM Viewer"),
 				giu.Child().Layout(
 					giu.Custom(func() {
-						for addr := 0; addr < cpu.VramSize; addr += 16 {
+						for addr := 0; addr < bus.VramSize; addr += 16 {
 							// Address
 							rowStr := fmt.Sprintf("%04X:", addr)
 
 							// Hex values
 							for i := 0; i < 16; i++ {
-								if addr+i < cpu.VramSize {
+								if addr+i < bus.VramSize {
 									rowStr += fmt.Sprintf(" %02X", Cpu.ReadMemory(uint16(addr+i)))
 								}
 							}
@@ -289,7 +290,7 @@ func renderEmulatorWindow() {
 							// ASCII representation
 							rowStr += "  "
 							for i := 0; i < 16; i++ {
-								if addr+i < cpu.VramSize {
+								if addr+i < bus.VramSize {
 									b := Cpu.ReadMemory(uint16(addr + i))
 									if b >= 32 && b <= 126 {
 										rowStr += string(b)

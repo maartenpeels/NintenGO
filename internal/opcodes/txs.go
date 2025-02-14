@@ -3,7 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0x9A, TXS, cpu.AddressingModeImplicit, 1, "TXS")
+	cpu.RegisterOpcode(0x9A, TXS, cpu.AddressingModeImplicit, 1, 2, "TXS")
 }
 
 // TXS Transfer X to Stack Pointer

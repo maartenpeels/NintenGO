@@ -15,11 +15,11 @@ func TestLDA(t *testing.T) {
 		t.Error("register A != 0x05")
 	}
 
-	if c.IsFlagSet(cpu.ZeroFlag) != false {
+	if c.Status.Contains(cpu.ZeroFlag) != false {
 		t.Error("Zero flag should be false")
 	}
 
-	if c.IsFlagSet(cpu.NegativeFlag) != false {
+	if c.Status.Contains(cpu.NegativeFlag) != false {
 		t.Error("Negative flag should be false")
 	}
 }
@@ -47,11 +47,11 @@ func TestLDAZero(t *testing.T) {
 		t.Error("register A != 0x00")
 	}
 
-	if c.IsFlagSet(cpu.ZeroFlag) != true {
+	if c.Status.Contains(cpu.ZeroFlag) != true {
 		t.Error("Zero flag should be true")
 	}
 
-	if c.IsFlagSet(cpu.NegativeFlag) != false {
+	if c.Status.Contains(cpu.NegativeFlag) != false {
 		t.Error("Negative flag should be false")
 	}
 }
@@ -65,11 +65,11 @@ func TestLDAZeroNegative(t *testing.T) {
 		t.Error("register A != 0x80")
 	}
 
-	if c.IsFlagSet(cpu.ZeroFlag) != false {
+	if c.Status.Contains(cpu.ZeroFlag) != false {
 		t.Error("Zero flag should be false")
 	}
 
-	if c.IsFlagSet(cpu.NegativeFlag) != true {
+	if c.Status.Contains(cpu.NegativeFlag) != true {
 		t.Error("Negative flag should be true")
 	}
 }

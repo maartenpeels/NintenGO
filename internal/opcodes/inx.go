@@ -3,7 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0xE8, INX, cpu.AddressingModeImplicit, 1, "INX")
+	cpu.RegisterOpcode(0xE8, INX, cpu.AddressingModeImplicit, 1, 2, "INX")
 }
 
 // INX Increment X Register

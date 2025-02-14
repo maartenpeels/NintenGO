@@ -12,7 +12,7 @@ func TestBRK(t *testing.T) {
 
 	c.Run()
 
-	if c.IsFlagSet(cpu.BreakCommand) != true {
+	if c.Status.Contains(cpu.BreakCommand) != true {
 		t.Error("Break flag should be true")
 	}
 }

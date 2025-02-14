@@ -3,7 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0xAA, TAX, cpu.AddressingModeImplicit, 1, "TAX")
+	cpu.RegisterOpcode(0xAA, TAX, cpu.AddressingModeImplicit, 1, 2, "TAX")
 }
 
 // TAX Transfer Accumulator to X

@@ -5,11 +5,11 @@ import (
 )
 
 func init() {
-	cpu.RegisterOpcode(0xA0, LDY, cpu.AddressingModeImmediate, 2, "LDY")
-	cpu.RegisterOpcode(0xA4, LDY, cpu.AddressingModeZeroPage, 2, "LDY")
-	cpu.RegisterOpcode(0xB4, LDY, cpu.AddressingModeZeroPageX, 2, "LDY")
-	cpu.RegisterOpcode(0xAC, LDY, cpu.AddressingModeAbsolute, 3, "LDY")
-	cpu.RegisterOpcode(0xBC, LDY, cpu.AddressingModeAbsoluteX, 3, "LDY")
+	cpu.RegisterOpcode(0xA0, LDY, cpu.AddressingModeImmediate, 2, 2, "LDY")
+	cpu.RegisterOpcode(0xA4, LDY, cpu.AddressingModeZeroPage, 2, 3, "LDY")
+	cpu.RegisterOpcode(0xB4, LDY, cpu.AddressingModeZeroPageX, 2, 4, "LDY")
+	cpu.RegisterOpcode(0xAC, LDY, cpu.AddressingModeAbsolute, 3, 4, "LDY")
+	cpu.RegisterOpcode(0xBC, LDY, cpu.AddressingModeAbsoluteX, 3, 5, "LDY")
 }
 
 // LDY Load Y Register

@@ -3,7 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0xA8, TAY, cpu.AddressingModeImplicit, 1, "TAY")
+	cpu.RegisterOpcode(0xA8, TAY, cpu.AddressingModeImplicit, 1, 2, "TAY")
 }
 
 // TAY Transfer Accumulator to Y

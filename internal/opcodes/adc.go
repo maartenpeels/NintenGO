@@ -5,14 +5,14 @@ import (
 )
 
 func init() {
-	cpu.RegisterOpcode(0x69, ADC, cpu.AddressingModeImmediate, 2, "ADC")
-	cpu.RegisterOpcode(0x65, ADC, cpu.AddressingModeZeroPage, 2, "ADC")
-	cpu.RegisterOpcode(0x75, ADC, cpu.AddressingModeZeroPageX, 2, "ADC")
-	cpu.RegisterOpcode(0x6d, ADC, cpu.AddressingModeAbsolute, 3, "ADC")
-	cpu.RegisterOpcode(0x7d, ADC, cpu.AddressingModeAbsoluteX, 3, "ADC")
-	cpu.RegisterOpcode(0x79, ADC, cpu.AddressingModeAbsoluteY, 3, "ADC")
-	cpu.RegisterOpcode(0x61, ADC, cpu.AddressingModeIndirectX, 2, "ADC")
-	cpu.RegisterOpcode(0x71, ADC, cpu.AddressingModeIndirectY, 2, "ADC")
+	cpu.RegisterOpcode(0x69, ADC, cpu.AddressingModeImmediate, 2, 2, "ADC")
+	cpu.RegisterOpcode(0x65, ADC, cpu.AddressingModeZeroPage, 2, 3, "ADC")
+	cpu.RegisterOpcode(0x75, ADC, cpu.AddressingModeZeroPageX, 2, 4, "ADC")
+	cpu.RegisterOpcode(0x6d, ADC, cpu.AddressingModeAbsolute, 3, 4, "ADC")
+	cpu.RegisterOpcode(0x7d, ADC, cpu.AddressingModeAbsoluteX, 3, 4, "ADC")
+	cpu.RegisterOpcode(0x79, ADC, cpu.AddressingModeAbsoluteY, 3, 4, "ADC")
+	cpu.RegisterOpcode(0x61, ADC, cpu.AddressingModeIndirectX, 2, 6, "ADC")
+	cpu.RegisterOpcode(0x71, ADC, cpu.AddressingModeIndirectY, 2, 5, "ADC")
 }
 
 // ADC Add with Carry

@@ -3,10 +3,10 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0xE6, INC, cpu.AddressingModeZeroPage, 2, "INC")
-	cpu.RegisterOpcode(0xF6, INC, cpu.AddressingModeZeroPageX, 2, "INC")
-	cpu.RegisterOpcode(0xEE, INC, cpu.AddressingModeAbsolute, 3, "INC")
-	cpu.RegisterOpcode(0xFE, INC, cpu.AddressingModeAbsoluteX, 3, "INC")
+	cpu.RegisterOpcode(0xE6, INC, cpu.AddressingModeZeroPage, 2, 5, "INC")
+	cpu.RegisterOpcode(0xF6, INC, cpu.AddressingModeZeroPageX, 2, 6, "INC")
+	cpu.RegisterOpcode(0xEE, INC, cpu.AddressingModeAbsolute, 3, 6, "INC")
+	cpu.RegisterOpcode(0xFE, INC, cpu.AddressingModeAbsoluteX, 3, 7, "INC")
 }
 
 // INC Decrement Memory

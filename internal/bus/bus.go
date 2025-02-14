@@ -1,8 +1,10 @@
-package cpu
+package bus
 
 import (
 	"NintenGo/internal/common"
+	"NintenGo/internal/ppu"
 	"NintenGo/internal/rom"
+	"fmt"
 )
 
 const (
@@ -47,14 +49,25 @@ const (
 // |_______________| $0000 |_______________|
 type BUS struct {
 	cpuVram [VramSize]byte // 2KB of VRAM
-	rom     *rom.Rom
+	cycles  uint64
+
+	prgRom *rom.Rom
+	ppu    *ppu.PPU
 }
 
 func NewBus(rom *rom.Rom) *BUS {
 	return &BUS{
 		cpuVram: [VramSize]byte{},
-		rom:     rom,
+		cycles:  0,
+
+		prgRom: rom,
+		ppu:    ppu.NewPPU(rom),
 	}
+}
+
+func (b *BUS) Tick(addCycles uint) {
+	b.cycles += uint64(addCycles)
+	b.ppu.Tick(addCycles)
 }
 
 func (b *BUS) ReadMemory(address uint16) uint8 {
@@ -62,38 +75,26 @@ func (b *BUS) ReadMemory(address uint16) uint8 {
 	case address >= RamStart && address <= RamMirrorsEnd:
 		mirrorDownAddress := address & 0b00000111_11111111
 		return b.cpuVram[mirrorDownAddress]
+
+	case address == 0x2000 || address == 0x2001 || address == 0x2003 ||
+		address == 0x2005 || address == 0x2006 || address == 0x4014:
+		common.Log.Errorf("Attempt to read from write-only PPU address 0x%04X", address)
+		return 0 // TODO: What should we return here? Should we panic?
+
+	case address == 0x2007:
+		return b.ppu.ReadData()
+
 	case address >= PpuRegistersStart && address <= PpuRegistersMirrorsEnd:
 		mirrorDownAddr := address & 0b00100000_00000111
-		_ = mirrorDownAddr // Placeholder for future PPU support
-		common.Log.Info("PPU is not supported yet")
-		return 0
-	case address >= 0x4000 && address <= 0x4017:
-		// APU and I/O registers
-		common.Log.Debug("APU read not implemented yet")
-		return 0
-	case address >= 0x4018 && address <= 0x401F:
-		// APU and I/O functionality that is normally disabled
-		common.Log.Debug("APU read not implemented yet")
-		return 0
-	case address >= 0x4020 && address < 0x8000:
-		// Expansion ROM - return 0 for now
-		common.Log.Debug("Expansion ROM read not implemented yet")
-		return 0
+		return b.ReadMemory(mirrorDownAddr)
+
 	case address >= 0x8000:
 		return b.ReadPrgRom(address)
+
 	default:
-		common.Log.Errorf("Incorrect memory access at %04X", address)
+		common.Log.Debugf("Ignoring mem access at 0x%04X", address)
 		return 0
 	}
-}
-
-func (b *BUS) ReadPrgRom(address uint16) uint8 {
-	newAddr := address - 0x8000
-	if len(b.rom.PrgRom) == 0x4000 && newAddr >= 0x4000 {
-		// If we have a 16KB PRG ROM, mirror the lower bank
-		newAddr %= 0x4000
-	}
-	return b.rom.PrgRom[newAddr]
 }
 
 func (b *BUS) WriteMemory(address uint16, value uint8) {
@@ -101,22 +102,33 @@ func (b *BUS) WriteMemory(address uint16, value uint8) {
 	case address >= RamStart && address <= RamMirrorsEnd:
 		mirrorDownAddress := address & 0b00000111_11111111
 		b.cpuVram[mirrorDownAddress] = value
-	case address >= PpuRegistersStart && address <= PpuRegistersMirrorsEnd:
+
+	case address == 0x2000:
+		b.ppu.WriteToCTRL(value)
+
+	case address == 0x2006:
+		b.ppu.WriteToPPUAddr(value)
+
+	case address == 0x2007:
+		b.ppu.WriteToData(value)
+
+	case address >= 0x2008 && address <= PpuRegistersMirrorsEnd:
 		mirrorDownAddr := address & 0b00100000_00000111
-		_ = mirrorDownAddr // Placeholder for future PPU support
-		common.Log.Info("PPU is not supported yet")
-	case address >= 0x4000 && address <= 0x4017:
-		// APU and I/O registers
-		common.Log.Debug("APU write not implemented yet")
-	case address >= 0x4018 && address <= 0x401F:
-		// APU and I/O functionality that is normally disabled
-		common.Log.Debug("APU write not implemented yet")
-	case address >= 0x4020 && address < 0x8000:
-		// Expansion ROM
-		common.Log.Debug("Expansion ROM write not implemented yet")
+		b.WriteMemory(mirrorDownAddr, value)
+
 	case address >= 0x8000:
-		common.Log.Errorf("Cannot write to ROM space at %04X", address)
+		panic(fmt.Sprintf("Attempt to write to Cartridge ROM space: 0x%04X", address))
+
 	default:
-		common.Log.Errorf("Incorrect memory access at %04X", address)
+		common.Log.Debugf("Ignoring mem write-access at 0x%04X", address)
 	}
+}
+
+func (b *BUS) ReadPrgRom(address uint16) uint8 {
+	newAddr := address - 0x8000
+	if len(b.prgRom.PrgRom) == 0x4000 && newAddr >= 0x4000 {
+		// If we have a 16KB PRG ROM, mirror the lower bank
+		newAddr %= 0x4000
+	}
+	return b.prgRom.PrgRom[newAddr]
 }

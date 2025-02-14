@@ -3,7 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0x8A, TXA, cpu.AddressingModeImplicit, 1, "TXA")
+	cpu.RegisterOpcode(0x8A, TXA, cpu.AddressingModeImplicit, 1, 2, "TXA")
 }
 
 // TXA Transfer X to Accumulator

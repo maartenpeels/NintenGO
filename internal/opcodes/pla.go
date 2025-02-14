@@ -3,7 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0x68, PLA, cpu.AddressingModeImplicit, 1, "PLA")
+	cpu.RegisterOpcode(0x68, PLA, cpu.AddressingModeImplicit, 1, 4, "PLA")
 }
 
 // PLA Pull Accumulator

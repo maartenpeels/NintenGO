@@ -6,7 +6,7 @@ import (
 )
 
 func init() {
-	cpu.RegisterOpcode(0x60, RTS, cpu.AddressingModeImplicit, 1, "RTS")
+	cpu.RegisterOpcode(0x60, RTS, cpu.AddressingModeImplicit, 1, 6, "RTS")
 }
 
 // RTS Return from Subroutine

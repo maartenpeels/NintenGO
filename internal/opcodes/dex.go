@@ -3,7 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
-	cpu.RegisterOpcode(0xCA, DEX, cpu.AddressingModeImplicit, 1, "DEX")
+	cpu.RegisterOpcode(0xCA, DEX, cpu.AddressingModeImplicit, 1, 2, "DEX")
 }
 
 // DEX Decrement X Register
