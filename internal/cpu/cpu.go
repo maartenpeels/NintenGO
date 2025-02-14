@@ -38,7 +38,7 @@ type CPU struct {
 	ProgramCounter uint16
 	StackPointer   uint8
 
-	Memory [0xFFFF]uint8
+	Bus *BUS
 }
 
 type Error struct {
@@ -51,8 +51,8 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("CPU Error at PC:%04X (OpCode:%02X): %s", e.PC, e.OpCode, e.Message)
 }
 
-func New(start uint16, program []byte) *CPU {
-	c := &CPU{
+func New(bus *BUS) *CPU {
+	return &CPU{
 		RegisterA: 0,
 		RegisterX: 0,
 		RegisterY: 0,
@@ -62,11 +62,8 @@ func New(start uint16, program []byte) *CPU {
 		ProgramCounter: 0,
 		StackPointer:   StackReset,
 
-		Memory: [0xFFFF]uint8{},
+		Bus: bus,
 	}
-	c.loadProgram(start, program)
-	c.Reset()
-	return c
 }
 
 func (c *CPU) Reset() {
@@ -95,6 +92,17 @@ func (c *CPU) Step() bool {
 
 	opcode := Dispatch(opCodeByte)
 
+	// Build instruction bytes string
+	var instructionBytes []string
+	instructionBytes = append(instructionBytes, fmt.Sprintf("%02X", opCodeByte))
+	for i := uint16(1); i < uint16(opcode.Length); i++ {
+		instructionBytes = append(instructionBytes, fmt.Sprintf("%02X", c.ReadMemory(programCounterStart+i)))
+	}
+	// Pad with spaces to always have 3 bytes worth of space
+	for len(instructionBytes) < 3 {
+		instructionBytes = append(instructionBytes, "  ")
+	}
+
 	// Store operand address before executing
 	var address uint16
 	var value uint8
@@ -110,42 +118,52 @@ func (c *CPU) Step() bool {
 		address = c.ProgramCounter + 1 + uint16(jump)
 	}
 
-	// Format status flags for better readability
-	statusFlags := fmt.Sprintf("%c%c%c%c%c%c%c",
-		map[bool]rune{true: 'N', false: '-'}[c.IsFlagSet(NegativeFlag)],
-		map[bool]rune{true: 'V', false: '-'}[c.IsFlagSet(OverflowFlag)],
-		map[bool]rune{true: 'B', false: '-'}[c.IsFlagSet(BreakCommand)],
-		map[bool]rune{true: 'D', false: '-'}[c.IsFlagSet(DecimalMode)],
-		map[bool]rune{true: 'I', false: '-'}[c.IsFlagSet(InterruptDisable)],
-		map[bool]rune{true: 'Z', false: '-'}[c.IsFlagSet(ZeroFlag)],
-		map[bool]rune{true: 'C', false: '-'}[c.IsFlagSet(CarryFlag)])
-
-	// Build the log message based on addressing mode
+	// Build the instruction string with proper formatting
+	var instruction string
 	switch opcode.AddressingMode {
-	case AddressingModeImplicit, AddressingModeAccumulator:
-		common.Log.Debugf("PC:%04X | OP:%02X %-3s | A:%02X X:%02X Y:%02X | SP:%02X | %s",
-			programCounterStart,
-			opCodeByte,
-			opcode.Name,
-			c.RegisterA,
-			c.RegisterX,
-			c.RegisterY,
-			c.StackPointer,
-			statusFlags)
-	default:
-		addrMode := getAddressingModeString(opcode.AddressingMode, address)
-		common.Log.Debugf("PC:%04X | OP:%02X %-3s | %s | VAL:%02X | A:%02X X:%02X Y:%02X | SP:%02X | %s",
-			programCounterStart,
-			opCodeByte,
-			opcode.Name,
-			addrMode,
-			value,
-			c.RegisterA,
-			c.RegisterX,
-			c.RegisterY,
-			c.StackPointer,
-			statusFlags)
+	case AddressingModeImplicit:
+		instruction = opcode.Name
+	case AddressingModeAccumulator:
+		instruction = opcode.Name + " A"
+	case AddressingModeImmediate:
+		instruction = fmt.Sprintf("%s #$%02X", opcode.Name, value)
+	case AddressingModeZeroPage:
+		instruction = fmt.Sprintf("%s $%02X = %02X", opcode.Name, address, value)
+	case AddressingModeZeroPageX:
+		instruction = fmt.Sprintf("%s $%02X,X", opcode.Name, address)
+	case AddressingModeZeroPageY:
+		instruction = fmt.Sprintf("%s $%02X,Y", opcode.Name, address)
+	case AddressingModeAbsolute:
+		instruction = fmt.Sprintf("%s $%04X", opcode.Name, address)
+	case AddressingModeAbsoluteX:
+		instruction = fmt.Sprintf("%s $%04X,X", opcode.Name, address)
+	case AddressingModeAbsoluteY:
+		instruction = fmt.Sprintf("%s $%04X,Y", opcode.Name, address)
+	case AddressingModeIndirect:
+		instruction = fmt.Sprintf("%s ($%04X)", opcode.Name, address)
+	case AddressingModeIndirectX:
+		instruction = fmt.Sprintf("%s ($%02X,X)", opcode.Name, address)
+	case AddressingModeIndirectY:
+		instruction = fmt.Sprintf("%s ($%02X),Y", opcode.Name, address)
+	case AddressingModeRelative:
+		instruction = fmt.Sprintf("%s $%04X", opcode.Name, address)
 	}
+
+	// Pad instruction to 32 characters
+	for len(instruction) < 32 {
+		instruction += " "
+	}
+
+	// Format the log message
+	common.Log.Debugf("%04X  %s  %s A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:  0,  0 CYC:0",
+		programCounterStart,
+		strings.Join(instructionBytes, " "),
+		instruction,
+		c.RegisterA,
+		c.RegisterX,
+		c.RegisterY,
+		c.Status,
+		c.StackPointer)
 
 	// Execute the instruction
 	opcode.Handler(c, opcode.AddressingMode)
@@ -153,10 +171,6 @@ func (c *CPU) Step() bool {
 	// Only increment PC after execution if it wasn't modified by the instruction
 	if c.ProgramCounter == programCounterState {
 		c.ProgramCounter += uint16(opcode.Length - 1)
-		common.Log.Debugf("PC:%04X | Next instruction", c.ProgramCounter)
-
-	} else {
-		common.Log.Debugf("PC:%04X | Jumped to %04X", programCounterStart, c.ProgramCounter)
 	}
 
 	return true
@@ -223,11 +237,11 @@ func (c *CPU) GetOpAddress(addressingMode uint) uint16 {
 }
 
 func (c *CPU) ReadMemory(address uint16) uint8 {
-	return c.Memory[address]
+	return c.Bus.ReadMemory(address)
 }
 
 func (c *CPU) WriteMemory(address uint16, value uint8) {
-	c.Memory[address] = value
+	c.Bus.WriteMemory(address, value)
 }
 
 func (c *CPU) ReadMemoryU16(address uint16) uint16 {
@@ -294,25 +308,6 @@ func (c *CPU) BranchIf(condition bool) {
 		jumpAddr := c.ProgramCounter + 1 + uint16(jump)
 		c.ProgramCounter = jumpAddr
 	}
-}
-
-func (c *CPU) loadProgram(start uint16, program []byte) {
-	common.Log.Debugf("Loading program of %d bytes at address %04X", len(program), start)
-	for i, b := range program {
-		c.Memory[start+uint16(i)] = b
-	}
-
-	// Verify the load
-	common.Log.Debug("Program load verification:")
-	for i := uint16(0); i < uint16(len(program)); i += 16 {
-		var bytes []string
-		for j := uint16(0); j < 16 && i+j < uint16(len(program)); j++ {
-			bytes = append(bytes, fmt.Sprintf("%02X", c.Memory[start+i+j]))
-		}
-		common.Log.Debugf("%04X: %s", start+i, strings.Join(bytes, " "))
-	}
-
-	c.WriteMemoryU16(0xFFFC, start)
 }
 
 // Helper function to get human-readable addressing mode string

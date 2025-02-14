@@ -3,24 +3,39 @@ package main
 import (
 	"NintenGo/internal/cpu"
 	_ "NintenGo/internal/opcodes" // Ugly, but cannot call from cpu package
+	"NintenGo/internal/rom"
 	"fmt"
-	"github.com/AllenDang/giu"
 	"image"
 	"image/color"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
+	"runtime"
+	"time"
+
+	"github.com/AllenDang/giu"
 )
 
-var Cpu *cpu.CPU
-var Rand = rand.NewPCG(42, 1024)
+var (
+	Cpu        *cpu.CPU
+	Rand       = rand.NewPCG(42, 1024)
+	cpuRunning = false
+	cpuControl = make(chan bool)
+)
 
-func main() {
-	// The following program is a simple snake game
-	// Memory layout:
-	// 0xFE: Random number
-	// 0xFF: Last pressed key
-	// 0x0200-0x0600: Screen buffer
-	// 0x0600-...: Snake code
-	program := []byte{
+func createFakeRom(fileName string) {
+	buffer, err := os.Create(fileName)
+	if err != nil {
+		panic(err)
+	}
+	defer buffer.Close()
+
+	header := []byte{
+		0x4E, 0x45, 0x53, 0x1A, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	pre := make([]byte, 0x600)
+	code := []byte{
 		0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0x20, 0x2a, 0x06, 0x60, 0xa9, 0x02,
 		0x85, 0x02, 0xa9, 0x04, 0x85, 0x03, 0xa9, 0x11, 0x85, 0x10, 0xa9, 0x10, 0x85, 0x12, 0xa9,
 		0x0f, 0x85, 0x14, 0xa9, 0x04, 0x85, 0x11, 0x85, 0x13, 0x85, 0x15, 0x60, 0xa5, 0xfe, 0x85,
@@ -41,9 +56,72 @@ func main() {
 		0xb0, 0x01, 0x60, 0xe6, 0x11, 0xa9, 0x06, 0xc5, 0x11, 0xf0, 0x0c, 0x60, 0xc6, 0x10, 0xa5,
 		0x10, 0x29, 0x1f, 0xc9, 0x1f, 0xf0, 0x01, 0x60, 0x4c, 0x35, 0x07, 0xa0, 0x00, 0xa5, 0xfe,
 		0x91, 0x00, 0x60, 0xa6, 0x03, 0xa9, 0x00, 0x81, 0x10, 0xa2, 0x00, 0xa9, 0x01, 0x81, 0x10,
-		0x60, 0xa6, 0xff, 0xea, 0xea, 0xca, 0xd0, 0xfb, 0x60}
+		0x60, 0xa6, 0xff, 0xea, 0xea, 0xca, 0xd0, 0xfb, 0x60,
+	}
 
-	Cpu = cpu.New(0x0600, program)
+	// Write header
+	if _, err := buffer.Write(header); err != nil {
+		panic(err)
+	}
+
+	// Write pre (0x600 zeroed bytes)
+	if _, err := buffer.Write(pre); err != nil {
+		panic(err)
+	}
+
+	// Write code
+	if _, err := buffer.Write(code); err != nil {
+		panic(err)
+	}
+
+	// Fill remaining bytes with zero until (0xFFFC - 0x8000)
+	pos := 0x600 + len(code)
+	for pos < (0xFFFC - 0x8000) {
+		if _, err := buffer.Write([]byte{0}); err != nil {
+			panic(err)
+		}
+		pos++
+	}
+
+	// Write final bytes
+	if _, err := buffer.Write([]byte{0x0, 0x86, 0, 0}); err != nil {
+		panic(err)
+	}
+
+	// Ensure all data is written
+	if err := buffer.Sync(); err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	// Get the directory containing the executable
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("No caller information")
+	}
+	execDir := filepath.Dir(filename)
+
+	// Construct path relative to the project root
+	romPath := filepath.Join(execDir, "..", "roms", "nestest.nes")
+
+	// DEBUG: Create a fake ROM
+	// createFakeRom(romPath)
+	// return
+
+	program, err := os.ReadFile(romPath)
+	if err != nil {
+		panic(err)
+	}
+
+	r, err := rom.NewRom(program)
+	if err != nil {
+		panic(err)
+	}
+	b := cpu.NewBus(r)
+	Cpu = cpu.New(b)
+	Cpu.Reset()
+	Cpu.ProgramCounter = 0xC000
 
 	wnd := giu.NewMasterWindow("NES Emulator", 1400, 1000, 0)
 	wnd.Run(renderEmulatorWindow)
@@ -52,18 +130,19 @@ func main() {
 // TODO: This is ugly as hell, refactor.
 func handleInput(c *cpu.CPU) {
 	if giu.IsKeyDown(giu.KeyW) {
-		c.Memory[0xFF] = 0x77
+		c.WriteMemory(0xFF, 0x77)
 	} else if giu.IsKeyDown(giu.KeyS) {
-		c.Memory[0xFF] = 0x73
+		c.WriteMemory(0xFF, 0x73)
 	} else if giu.IsKeyDown(giu.KeyA) {
-		c.Memory[0xFF] = 0x61
+		c.WriteMemory(0xFF, 0x61)
 	} else if giu.IsKeyDown(giu.KeyD) {
-		c.Memory[0xFF] = 0x64
+		c.WriteMemory(0xFF, 0x64)
 	} else {
 		// Do nothing
 	}
 }
 
+// TODO: This is ugly as hell, refactor.
 func mapColor(byteValue uint8) color.RGBA {
 	switch byteValue {
 	case 0:
@@ -143,15 +222,14 @@ func renderEmulatorWindow() {
 
 					// Controls
 					giu.Row(
-						giu.Button("Run").OnClick(func() {
-							Cpu.RunWithCallback(func(c *cpu.CPU) {
-								handleInput(c)
-
-								// Set random number
-								c.WriteMemory(0xFE, uint8(Rand.Uint64()))
-
-								giu.Update()
-							})
+						giu.Button(map[bool]string{true: "Stop", false: "Run"}[cpuRunning]).OnClick(func() {
+							if !cpuRunning {
+								cpuRunning = true
+								go runCPU()
+							} else {
+								cpuRunning = false
+								cpuControl <- false
+							}
 						}),
 
 						giu.Button("Step").OnClick(func() {
@@ -197,22 +275,22 @@ func renderEmulatorWindow() {
 				giu.Label("RAM Viewer"),
 				giu.Child().Layout(
 					giu.Custom(func() {
-						for addr := 0; addr < len(Cpu.Memory); addr += 16 {
+						for addr := 0; addr < cpu.VramSize; addr += 16 {
 							// Address
 							rowStr := fmt.Sprintf("%04X:", addr)
 
 							// Hex values
 							for i := 0; i < 16; i++ {
-								if addr+i < len(Cpu.Memory) {
-									rowStr += fmt.Sprintf(" %02X", Cpu.Memory[addr+i])
+								if addr+i < cpu.VramSize {
+									rowStr += fmt.Sprintf(" %02X", Cpu.ReadMemory(uint16(addr+i)))
 								}
 							}
 
 							// ASCII representation
 							rowStr += "  "
 							for i := 0; i < 16; i++ {
-								if addr+i < len(Cpu.Memory) {
-									b := Cpu.Memory[addr+i]
+								if addr+i < cpu.VramSize {
+									b := Cpu.ReadMemory(uint16(addr + i))
 									if b >= 32 && b <= 126 {
 										rowStr += string(b)
 									} else {
@@ -228,4 +306,22 @@ func renderEmulatorWindow() {
 			},
 		),
 	)
+}
+
+func runCPU() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for cpuRunning {
+		select {
+		case <-cpuControl:
+			return
+		case <-ticker.C:
+			Cpu.RunWithCallback(func(c *cpu.CPU) {
+				handleInput(c)
+				c.WriteMemory(0xFE, uint8(Rand.Uint64()))
+				giu.Update()
+			})
+		}
+	}
 }

@@ -11,8 +11,5 @@ func init() {
 
 // JMP Jump
 func JMP(c *cpu.CPU, addressingMode uint) {
-	addr := c.GetOpAddress(addressingMode)
-	value := c.ReadMemory(addr)
-
-	c.ProgramCounter = uint16(value)
+	c.ProgramCounter = c.GetOpAddress(addressingMode)
 }
