@@ -104,7 +104,7 @@ func main() {
 	execDir := filepath.Dir(filename)
 
 	// Construct path relative to the project root
-	romPath := filepath.Join(execDir, "..", "roms", "nestest.nes")
+	romPath := filepath.Join(execDir, "roms", "nestest.nes")
 
 	// DEBUG: Create a fake ROM
 	// createFakeRom(romPath)
