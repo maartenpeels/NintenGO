@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/AllenDang/giu"
@@ -105,6 +106,7 @@ func main() {
 
 	// Construct path relative to the project root
 	romPath := filepath.Join(execDir, "roms", "nestest.nes")
+	logPath := filepath.Join(execDir, "roms", "nestest.log")
 
 	// DEBUG: Create a fake ROM
 	// createFakeRom(romPath)
@@ -115,12 +117,19 @@ func main() {
 		panic(err)
 	}
 
+	expectedLogsBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		panic(err)
+	}
+
+	expectedLogs := strings.Split(string(expectedLogsBytes), "\n")
+
 	r, err := rom.NewRom(program)
 	if err != nil {
 		panic(err)
 	}
 	b := bus.NewBus(r)
-	Cpu = cpu.New(b)
+	Cpu = cpu.New(b, expectedLogs)
 	Cpu.Reset()
 	Cpu.ProgramCounter = 0xC000
 

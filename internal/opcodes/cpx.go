@@ -13,7 +13,13 @@ func CPX(c *cpu.CPU, addressingMode uint) {
 	addr := c.GetOpAddress(addressingMode)
 	value := c.ReadMemory(addr)
 
-	cmp := c.RegisterX - value
+	// C - Set if X >= M
 	c.Status.SetBool(cpu.CarryFlag, c.RegisterX >= value)
-	c.SetZeroAndNegativeFlags(cmp)
+
+	// Z - Set if X = M
+	c.Status.SetBool(cpu.ZeroFlag, c.RegisterX == value)
+
+	// N - Set if bit 7 of the result is set
+	result := c.RegisterX - value
+	c.Status.SetBool(cpu.NegativeFlag, (result&0x80) != 0)
 }

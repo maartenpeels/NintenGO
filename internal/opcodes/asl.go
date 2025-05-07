@@ -16,10 +16,11 @@ func init() {
 func ASLA(c *cpu.CPU, addressingMode uint) {
 	value := c.RegisterA
 
-	c.Status.SetBool(cpu.CarryFlag, value&0x80 == 1)
+	c.Status.SetBool(cpu.CarryFlag, value&0x80 != 0)
 	value <<= 1
 
 	c.RegisterA = value
+	c.SetZeroAndNegativeFlags(value)
 }
 
 // ASL Arithmetic Shift Left

@@ -14,10 +14,16 @@ func init() {
 func ROLa(c *cpu.CPU, _ uint) {
 	value := c.RegisterA
 
+	// Save the current carry flag
 	oldCarry := c.Status.Contains(cpu.CarryFlag)
-	c.Status.SetBool(cpu.CarryFlag, value>>7 == 1)
 
+	// Set carry flag to contents of old bit 7
+	c.Status.SetBool(cpu.CarryFlag, value&0x80 != 0)
+
+	// Shift left
 	value <<= 1
+
+	// Put old carry into bit 0
 	if oldCarry {
 		value |= 1
 	}
@@ -31,10 +37,16 @@ func ROL(c *cpu.CPU, addressingMode uint) {
 	addr := c.GetOpAddress(addressingMode)
 	value := c.ReadMemory(addr)
 
+	// Save the current carry flag
 	oldCarry := c.Status.Contains(cpu.CarryFlag)
-	c.Status.SetBool(cpu.CarryFlag, value>>7 == 1)
 
+	// Set carry flag to contents of old bit 7
+	c.Status.SetBool(cpu.CarryFlag, value&0x80 != 0)
+
+	// Shift left
 	value <<= 1
+
+	// Put old carry into bit 0
 	if oldCarry {
 		value |= 1
 	}

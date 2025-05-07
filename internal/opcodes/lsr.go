@@ -18,6 +18,7 @@ func LSRa(c *cpu.CPU, addressingMode uint) {
 	value >>= 1
 
 	c.RegisterA = value
+	c.SetZeroAndNegativeFlags(value)
 }
 
 // LSR Logical Shift Right

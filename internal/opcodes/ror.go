@@ -14,12 +14,18 @@ func init() {
 func RORa(c *cpu.CPU, _ uint) {
 	value := c.RegisterA
 
+	// Save the current carry flag
 	oldCarry := c.Status.Contains(cpu.CarryFlag)
-	c.Status.SetBool(cpu.CarryFlag, value&1 == 1)
 
+	// Set carry flag to contents of old bit 0
+	c.Status.SetBool(cpu.CarryFlag, value&1 != 0)
+
+	// Shift right
 	value >>= 1
+
+	// Put old carry into bit 7
 	if oldCarry {
-		value |= 1
+		value |= 0x80
 	}
 
 	c.RegisterA = value
@@ -31,12 +37,18 @@ func ROR(c *cpu.CPU, addressingMode uint) {
 	addr := c.GetOpAddress(addressingMode)
 	value := c.ReadMemory(addr)
 
+	// Save the current carry flag
 	oldCarry := c.Status.Contains(cpu.CarryFlag)
-	c.Status.SetBool(cpu.CarryFlag, value&1 == 1)
 
+	// Set carry flag to contents of old bit 0
+	c.Status.SetBool(cpu.CarryFlag, value&1 != 0)
+
+	// Shift right
 	value >>= 1
+
+	// Put old carry into bit 7
 	if oldCarry {
-		value |= 1
+		value |= 0x80
 	}
 
 	c.WriteMemory(addr, value)

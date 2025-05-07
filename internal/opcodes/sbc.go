@@ -3,6 +3,7 @@ package opcodes
 import "NintenGo/internal/cpu"
 
 func init() {
+	// Official SBC opcodes
 	cpu.RegisterOpcode(0xE9, SBC, cpu.AddressingModeImmediate, 2, 2, "SBC")
 	cpu.RegisterOpcode(0xE5, SBC, cpu.AddressingModeZeroPage, 2, 3, "SBC")
 	cpu.RegisterOpcode(0xF5, SBC, cpu.AddressingModeZeroPageX, 2, 4, "SBC")
@@ -11,6 +12,9 @@ func init() {
 	cpu.RegisterOpcode(0xF9, SBC, cpu.AddressingModeAbsoluteY, 3, 4, "SBC")
 	cpu.RegisterOpcode(0xE1, SBC, cpu.AddressingModeIndirectX, 2, 6, "SBC")
 	cpu.RegisterOpcode(0xF1, SBC, cpu.AddressingModeIndirectY, 2, 5, "SBC")
+
+	// Unofficial SBC opcode
+	cpu.RegisterOpcode(0xEB, SBC, cpu.AddressingModeImmediate, 2, 2, "*SBC")
 }
 
 // SBC Subtract with Carry

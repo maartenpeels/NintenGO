@@ -40,6 +40,9 @@ type CPU struct {
 	StackPointer   uint8
 
 	Bus *bus.BUS
+
+	CurrentIndex uint
+	ExpectedLogs []string
 }
 
 type Error struct {
@@ -52,7 +55,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("CPU Error at PC:%04X (OpCode:%02X): %s", e.PC, e.OpCode, e.Message)
 }
 
-func New(bus *bus.BUS) *CPU {
+func New(bus *bus.BUS, expectedLogs []string) *CPU {
 	return &CPU{
 		RegisterA: 0,
 		RegisterX: 0,
@@ -64,6 +67,9 @@ func New(bus *bus.BUS) *CPU {
 		StackPointer:   StackReset,
 
 		Bus: bus,
+
+		CurrentIndex: 0,
+		ExpectedLogs: expectedLogs,
 	}
 }
 
@@ -131,40 +137,106 @@ func (c *CPU) Step() bool {
 	case AddressingModeZeroPage:
 		instruction = fmt.Sprintf("%s $%02X = %02X", opcode.Name, address, value)
 	case AddressingModeZeroPageX:
-		instruction = fmt.Sprintf("%s $%02X,X", opcode.Name, address)
+		// Get the base address before X is added
+		baseAddr := c.ReadMemory(c.ProgramCounter)
+		instruction = fmt.Sprintf("%s $%02X,X @ %02X = %02X", opcode.Name, baseAddr, address, value)
 	case AddressingModeZeroPageY:
-		instruction = fmt.Sprintf("%s $%02X,Y", opcode.Name, address)
+		// Get the base address before Y is added
+		baseAddr := c.ReadMemory(c.ProgramCounter)
+		instruction = fmt.Sprintf("%s $%02X,Y @ %02X = %02X", opcode.Name, baseAddr, address, value)
 	case AddressingModeAbsolute:
-		instruction = fmt.Sprintf("%s $%04X", opcode.Name, address)
+		instruction = fmt.Sprintf("%s $%04X = %02X", opcode.Name, address, value)
 	case AddressingModeAbsoluteX:
-		instruction = fmt.Sprintf("%s $%04X,X", opcode.Name, address)
+		// Get the base address before X is added
+		baseAddr := c.ReadMemoryU16(c.ProgramCounter)
+		instruction = fmt.Sprintf("%s $%04X,X @ %04X = %02X", opcode.Name, baseAddr, address, value)
 	case AddressingModeAbsoluteY:
-		instruction = fmt.Sprintf("%s $%04X,Y", opcode.Name, address)
+		// Get the base address before Y is added
+		baseAddr := c.ReadMemoryU16(c.ProgramCounter)
+		instruction = fmt.Sprintf("%s $%04X,Y @ %04X = %02X", opcode.Name, baseAddr, address, value)
 	case AddressingModeIndirect:
-		instruction = fmt.Sprintf("%s ($%04X)", opcode.Name, address)
+		// Special case for JMP indirect
+		if opcode.Name == "JMP" {
+			// For JMP indirect, we need to show the target address
+			base := c.ReadMemoryU16(c.ProgramCounter)
+			// The 6502 has a bug where it doesn't correctly fetch the high byte if the low byte is at the end of a page
+			// We need to emulate this behavior
+			lo := c.ReadMemory(base)
+			hi := c.ReadMemory((base & 0xFF00) | ((base + 1) & 0xFF)) // Page boundary wrap
+			targetAddr := uint16(hi)<<8 | uint16(lo)
+
+			instruction = fmt.Sprintf("%s ($%04X) = %04X", opcode.Name, base, targetAddr)
+		} else {
+			instruction = fmt.Sprintf("%s ($%04X)", opcode.Name, address)
+		}
 	case AddressingModeIndirectX:
-		instruction = fmt.Sprintf("%s ($%02X,X)", opcode.Name, address)
+		// For IndirectX, we need to show the zero page address and the final address
+		zeroPageAddr := c.ReadMemory(c.ProgramCounter)
+		effectiveAddr := uint8(zeroPageAddr + c.RegisterX)
+		lo := c.ReadMemory(uint16(effectiveAddr))
+		hi := c.ReadMemory(uint16(uint8(effectiveAddr + 1)))
+		finalAddr := uint16(hi)<<8 | uint16(lo)
+
+		// Format: LDA ($80,X) @ 85 = 0200 = 5A
+		instruction = fmt.Sprintf("%s ($%02X,X) @ %02X = %04X = %02X",
+			opcode.Name, zeroPageAddr, effectiveAddr, finalAddr, value)
 	case AddressingModeIndirectY:
-		instruction = fmt.Sprintf("%s ($%02X),Y", opcode.Name, address)
+		// For IndirectY, we need to show the zero page address, the address it points to, and the final value
+		zeroPageAddr := c.ReadMemory(c.ProgramCounter)
+		lo := c.ReadMemory(uint16(zeroPageAddr))
+		hi := c.ReadMemory(uint16(uint8(zeroPageAddr + 1)))
+		baseAddr := uint16(hi)<<8 | uint16(lo)
+		finalAddr := baseAddr + uint16(c.RegisterY)
+
+		// Format: LDA ($89),Y = 0300 @ 0300 = 89
+		instruction = fmt.Sprintf("%s ($%02X),Y = %04X @ %04X = %02X",
+			opcode.Name, zeroPageAddr, baseAddr, finalAddr, value)
 	case AddressingModeRelative:
 		instruction = fmt.Sprintf("%s $%04X", opcode.Name, address)
 	}
 
-	// Pad instruction to 32 characters
-	for len(instruction) < 32 {
+	// Pad instruction to 31 characters
+	padLength := 31
+	if strings.HasPrefix(instruction, "*") {
+		padLength = 32
+	}
+	for len(instruction) < padLength {
 		instruction += " "
 	}
 
 	// Format the log message
-	common.Log.Debugf("%04X  %s  %s A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:  0,  0 CYC:0",
+	// For unofficial opcodes, we need to adjust the spacing between instruction bytes and instruction name
+	instructionBytesStr := strings.Join(instructionBytes, " ")
+
+	// Adjust spacing between instruction bytes and instruction name
+	// For unofficial opcodes (*NOP), we need 1 space instead of the usual 2
+	spacing := "  "
+	if strings.HasPrefix(instruction, "*") {
+		spacing = " "
+	}
+
+	log := fmt.Sprintf("%04X  %s%s%s A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:  0,  0 CYC:0",
 		programCounterStart,
-		strings.Join(instructionBytes, " "),
+		instructionBytesStr,
+		spacing,
 		instruction,
 		c.RegisterA,
 		c.RegisterX,
 		c.RegisterY,
-		c.Status,
+		c.Status.value,
 		c.StackPointer)
+	common.Log.Info(log)
+
+	// // Check if line matches the expected log
+	// expectedLogLine := c.ExpectedLogs[c.CurrentIndex]
+	// expectedLogLineStart := strings.SplitN(expectedLogLine, "PPU:", 2)[0]
+	// currentLogStart := strings.SplitN(log, "PPU:", 2)[0]
+	// if expectedLogLineStart != currentLogStart {
+	// 	common.Log.Errorf("Log mismatch at index %d:\nexpected:\n\t%s\ngot:\n\t%s", c.CurrentIndex, expectedLogLineStart, currentLogStart)
+	// 	c.Status.Set(BreakCommand)
+	// 	return false
+	// }
+	// c.CurrentIndex++
 
 	// Execute the instruction
 	opcode.Handler(c, opcode.AddressingMode)
@@ -217,20 +289,23 @@ func (c *CPU) GetOpAddress(addressingMode uint) uint16 {
 		return pos + uint16(c.RegisterY)
 	case AddressingModeIndirectX:
 		base := c.ReadMemory(c.ProgramCounter)
-		pos := uint16(base + c.RegisterX)
-		lo := c.ReadMemory(pos)
-		hi := c.ReadMemory(pos + 1)
+		// X register wraps in zero page
+		pos := uint8(base + c.RegisterX)
+		lo := c.ReadMemory(uint16(pos))
+		hi := c.ReadMemory(uint16(uint8(pos + 1)))
 		return uint16(hi)<<8 | uint16(lo)
 	case AddressingModeIndirectY:
 		base := c.ReadMemory(c.ProgramCounter)
+		// Zero page wrapping for the pointer
 		lo := c.ReadMemory(uint16(base))
-		hi := c.ReadMemory(uint16(base + 1))
+		hi := c.ReadMemory(uint16(uint8(base + 1)))
 		addr := uint16(hi)<<8 | uint16(lo)
 		return addr + uint16(c.RegisterY)
 	case AddressingModeIndirect:
-		base := c.ReadMemory(c.ProgramCounter)
-		lo := c.ReadMemory(uint16(base))
-		hi := c.ReadMemory(uint16(base + 1))
+		base := c.ReadMemoryU16(c.ProgramCounter)
+		// The 6502 has a hardware bug where it doesn't correctly fetch the high byte if the low byte is at the end of a page
+		lo := c.ReadMemory(base)
+		hi := c.ReadMemory((base & 0xFF00) | ((base + 1) & 0xFF)) // Page boundary wrap
 		return uint16(hi)<<8 | uint16(lo)
 	default:
 		panic("Unknown addressing mode: " + strconv.Itoa(int(addressingMode)))
@@ -309,33 +384,5 @@ func (c *CPU) BranchIf(condition bool) {
 		jump := int8(c.ReadMemory(c.ProgramCounter))
 		jumpAddr := c.ProgramCounter + 1 + uint16(jump)
 		c.ProgramCounter = jumpAddr
-	}
-}
-
-// Helper function to get human-readable addressing mode string
-func getAddressingModeString(mode uint, address uint16) string {
-	switch mode {
-	case AddressingModeImmediate:
-		return fmt.Sprintf("#$%02X", address)
-	case AddressingModeZeroPage:
-		return fmt.Sprintf("$%02X", address)
-	case AddressingModeZeroPageX:
-		return fmt.Sprintf("$%02X,X", address)
-	case AddressingModeZeroPageY:
-		return fmt.Sprintf("$%02X,Y", address)
-	case AddressingModeAbsolute:
-		return fmt.Sprintf("$%04X", address)
-	case AddressingModeAbsoluteX:
-		return fmt.Sprintf("$%04X,X", address)
-	case AddressingModeAbsoluteY:
-		return fmt.Sprintf("$%04X,Y", address)
-	case AddressingModeIndirect:
-		return fmt.Sprintf("($%04X)", address)
-	case AddressingModeIndirectX:
-		return fmt.Sprintf("($%02X,X)", address)
-	case AddressingModeIndirectY:
-		return fmt.Sprintf("($%02X),Y", address)
-	default:
-		return fmt.Sprintf("$%04X", address)
 	}
 }

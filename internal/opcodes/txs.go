@@ -9,5 +9,4 @@ func init() {
 // TXS Transfer X to Stack Pointer
 func TXS(c *cpu.CPU, _ uint) {
 	c.StackPointer = c.RegisterX
-	c.SetZeroAndNegativeFlags(c.StackPointer)
 }

@@ -13,7 +13,13 @@ func CPY(c *cpu.CPU, addressingMode uint) {
 	addr := c.GetOpAddress(addressingMode)
 	value := c.ReadMemory(addr)
 
-	cmp := c.RegisterY - value
+	// C - Set if Y >= M
 	c.Status.SetBool(cpu.CarryFlag, c.RegisterY >= value)
-	c.SetZeroAndNegativeFlags(cmp)
+
+	// Z - Set if Y = M
+	c.Status.SetBool(cpu.ZeroFlag, c.RegisterY == value)
+
+	// N - Set if bit 7 of the result is set
+	result := c.RegisterY - value
+	c.Status.SetBool(cpu.NegativeFlag, (result&0x80) != 0)
 }

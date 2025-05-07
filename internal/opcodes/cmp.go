@@ -18,7 +18,13 @@ func CMP(c *cpu.CPU, addressingMode uint) {
 	addr := c.GetOpAddress(addressingMode)
 	value := c.ReadMemory(addr)
 
-	cmp := c.RegisterA - value
+	// C - Set if A >= M
 	c.Status.SetBool(cpu.CarryFlag, c.RegisterA >= value)
-	c.SetZeroAndNegativeFlags(cmp)
+
+	// Z - Set if A = M
+	c.Status.SetBool(cpu.ZeroFlag, c.RegisterA == value)
+
+	// N - Set if bit 7 of the result is set
+	result := c.RegisterA - value
+	c.Status.SetBool(cpu.NegativeFlag, (result&0x80) != 0)
 }
