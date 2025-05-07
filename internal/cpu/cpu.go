@@ -91,152 +91,49 @@ func (c *CPU) Step() bool {
 		return false
 	}
 
+	// Capture PC for trace, before it's incremented past the current opcode
+	pcForTrace := c.ProgramCounter
+
 	opCodeByte := c.ReadMemory(c.ProgramCounter)
-	programCounterStart := c.ProgramCounter
+	// programCounterStart := c.ProgramCounter // pcForTrace serves this purpose now
 	c.ProgramCounter += 1
 	programCounterState := c.ProgramCounter
 
 	opcode := Dispatch(opCodeByte)
 	c.Bus.Tick(opcode.Cycles)
 
-	// Build instruction bytes string
-	var instructionBytes []string
-	instructionBytes = append(instructionBytes, fmt.Sprintf("%02X", opCodeByte))
-	for i := uint16(1); i < uint16(opcode.Length); i++ {
-		instructionBytes = append(instructionBytes, fmt.Sprintf("%02X", c.ReadMemory(programCounterStart+i)))
-	}
-	// Pad with spaces to always have 3 bytes worth of space
-	for len(instructionBytes) < 3 {
-		instructionBytes = append(instructionBytes, "  ")
-	}
+	// Generate the full trace log line using the new Trace function
+	// We pass a temporary CPU state with the PC set to the beginning of the instruction
+	// because Trace itself will manipulate and then restore cpu.ProgramCounter for GetOpAddress.
+	tempCPUStateForTrace := *c
+	tempCPUStateForTrace.ProgramCounter = pcForTrace // Ensure Trace sees the PC at the start of the opcode
+	traceLog := Trace(&tempCPUStateForTrace)
 
-	// Store operand address before executing
-	var address uint16
-	var value uint8
+	// Debug log with the new trace format
+	common.Log.Debug(traceLog)
 
-	if opcode.AddressingMode != AddressingModeImplicit &&
-		opcode.AddressingMode != AddressingModeAccumulator &&
-		opcode.AddressingMode != AddressingModeRelative {
-		address = c.GetOpAddress(opcode.AddressingMode)
-		value = c.ReadMemory(address)
-	} else if opcode.AddressingMode == AddressingModeRelative {
-		// Branch instructions
-		jump := int8(c.ReadMemory(c.ProgramCounter))
-		address = c.ProgramCounter + 1 + uint16(jump)
-	}
+	// Check against expected logs if they exist
+	if c.ExpectedLogs != nil && len(c.ExpectedLogs) > 0 && c.CurrentIndex < uint(len(c.ExpectedLogs)) {
+		expected := c.ExpectedLogs[c.CurrentIndex]
+		// Compare traceLog with expected. Need to ensure formats match or use a flexible comparison.
+		// For now, let's assume exact match for simplicity, though this might need refinement
+		// if there are subtle differences (e.g. extra spaces, case sensitivity) introduced by the new Trace func.
 
-	// Build the instruction string with proper formatting
-	var instruction string
-	switch opcode.AddressingMode {
-	case AddressingModeImplicit:
-		instruction = opcode.Name
-	case AddressingModeAccumulator:
-		instruction = opcode.Name + " A"
-	case AddressingModeImmediate:
-		instruction = fmt.Sprintf("%s #$%02X", opcode.Name, value)
-	case AddressingModeZeroPage:
-		instruction = fmt.Sprintf("%s $%02X = %02X", opcode.Name, address, value)
-	case AddressingModeZeroPageX:
-		// Get the base address before X is added
-		baseAddr := c.ReadMemory(c.ProgramCounter)
-		instruction = fmt.Sprintf("%s $%02X,X @ %02X = %02X", opcode.Name, baseAddr, address, value)
-	case AddressingModeZeroPageY:
-		// Get the base address before Y is added
-		baseAddr := c.ReadMemory(c.ProgramCounter)
-		instruction = fmt.Sprintf("%s $%02X,Y @ %02X = %02X", opcode.Name, baseAddr, address, value)
-	case AddressingModeAbsolute:
-		instruction = fmt.Sprintf("%s $%04X = %02X", opcode.Name, address, value)
-	case AddressingModeAbsoluteX:
-		// Get the base address before X is added
-		baseAddr := c.ReadMemoryU16(c.ProgramCounter)
-		instruction = fmt.Sprintf("%s $%04X,X @ %04X = %02X", opcode.Name, baseAddr, address, value)
-	case AddressingModeAbsoluteY:
-		// Get the base address before Y is added
-		baseAddr := c.ReadMemoryU16(c.ProgramCounter)
-		instruction = fmt.Sprintf("%s $%04X,Y @ %04X = %02X", opcode.Name, baseAddr, address, value)
-	case AddressingModeIndirect:
-		// Special case for JMP indirect
-		if opcode.Name == "JMP" {
-			// For JMP indirect, we need to show the target address
-			base := c.ReadMemoryU16(c.ProgramCounter)
-			// The 6502 has a bug where it doesn't correctly fetch the high byte if the low byte is at the end of a page
-			// We need to emulate this behavior
-			lo := c.ReadMemory(base)
-			hi := c.ReadMemory((base & 0xFF00) | ((base + 1) & 0xFF)) // Page boundary wrap
-			targetAddr := uint16(hi)<<8 | uint16(lo)
+		// For now we ignore the PPU part at the end
+		traceLog = strings.SplitN(traceLog, "PPU", 2)[0]
+		expected = strings.SplitN(expected, "PPU", 2)[0]
 
-			instruction = fmt.Sprintf("%s ($%04X) = %04X", opcode.Name, base, targetAddr)
-		} else {
-			instruction = fmt.Sprintf("%s ($%04X)", opcode.Name, address)
+		if traceLog != expected {
+			errorMessage := fmt.Sprintf("\nTrace mismatch at PC %04X (Op: %02X, Index: %d):\nExpected: %s\nGot:      %s",
+				pcForTrace, opCodeByte, c.CurrentIndex, expected, traceLog)
+			common.Log.Error(errorMessage)
+			c.Status.Set(BreakCommand)
+			return false
 		}
-	case AddressingModeIndirectX:
-		// For IndirectX, we need to show the zero page address and the final address
-		zeroPageAddr := c.ReadMemory(c.ProgramCounter)
-		effectiveAddr := uint8(zeroPageAddr + c.RegisterX)
-		lo := c.ReadMemory(uint16(effectiveAddr))
-		hi := c.ReadMemory(uint16(uint8(effectiveAddr + 1)))
-		finalAddr := uint16(hi)<<8 | uint16(lo)
-
-		// Format: LDA ($80,X) @ 85 = 0200 = 5A
-		instruction = fmt.Sprintf("%s ($%02X,X) @ %02X = %04X = %02X",
-			opcode.Name, zeroPageAddr, effectiveAddr, finalAddr, value)
-	case AddressingModeIndirectY:
-		// For IndirectY, we need to show the zero page address, the address it points to, and the final value
-		zeroPageAddr := c.ReadMemory(c.ProgramCounter)
-		lo := c.ReadMemory(uint16(zeroPageAddr))
-		hi := c.ReadMemory(uint16(uint8(zeroPageAddr + 1)))
-		baseAddr := uint16(hi)<<8 | uint16(lo)
-		finalAddr := baseAddr + uint16(c.RegisterY)
-
-		// Format: LDA ($89),Y = 0300 @ 0300 = 89
-		instruction = fmt.Sprintf("%s ($%02X),Y = %04X @ %04X = %02X",
-			opcode.Name, zeroPageAddr, baseAddr, finalAddr, value)
-	case AddressingModeRelative:
-		instruction = fmt.Sprintf("%s $%04X", opcode.Name, address)
 	}
-
-	// Pad instruction to 31 characters
-	padLength := 31
-	if strings.HasPrefix(instruction, "*") {
-		padLength = 32
+	if c.ExpectedLogs != nil {
+		c.CurrentIndex++
 	}
-	for len(instruction) < padLength {
-		instruction += " "
-	}
-
-	// Format the log message
-	// For unofficial opcodes, we need to adjust the spacing between instruction bytes and instruction name
-	instructionBytesStr := strings.Join(instructionBytes, " ")
-
-	// Adjust spacing between instruction bytes and instruction name
-	// For unofficial opcodes (*NOP), we need 1 space instead of the usual 2
-	spacing := "  "
-	if strings.HasPrefix(instruction, "*") {
-		spacing = " "
-	}
-
-	log := fmt.Sprintf("%04X  %s%s%s A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:  0,  0 CYC:0",
-		programCounterStart,
-		instructionBytesStr,
-		spacing,
-		instruction,
-		c.RegisterA,
-		c.RegisterX,
-		c.RegisterY,
-		c.Status.value,
-		c.StackPointer)
-	common.Log.Info(log)
-
-	// // Check if line matches the expected log
-	// expectedLogLine := c.ExpectedLogs[c.CurrentIndex]
-	// expectedLogLineStart := strings.SplitN(expectedLogLine, "PPU:", 2)[0]
-	// currentLogStart := strings.SplitN(log, "PPU:", 2)[0]
-	// if expectedLogLineStart != currentLogStart {
-	// 	common.Log.Errorf("Log mismatch at index %d:\nexpected:\n\t%s\ngot:\n\t%s", c.CurrentIndex, expectedLogLineStart, currentLogStart)
-	// 	c.Status.Set(BreakCommand)
-	// 	return false
-	// }
-	// c.CurrentIndex++
 
 	// Execute the instruction
 	opcode.Handler(c, opcode.AddressingMode)
